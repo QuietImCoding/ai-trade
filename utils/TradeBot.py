@@ -1,0 +1,86 @@
+from web3 import Web3
+from web3.middleware import geth_poa_middleware, construct_sign_and_send_raw_middleware
+from binascii import hexlify
+import os, json
+from eth_account import Account
+from constants import * 
+
+class TradeBot:
+
+
+    ## TODO -- get eth balance of trade bot
+    ## could use some other token
+    def getEthBalances(self):
+        return 100
+
+    ## TODO -- implement market querying logic
+    def queryMarket():
+        return { "apples" : 10, "blueberries": 2, "bananas": 4, "raspberries": 6}
+
+    def swap(self, t1: str, t1_amt: int, t2: str) -> int:
+
+        SLIPPAGE_TOLERANCE = 0.01  # 1% slippage tolerance
+        DEADLINE = 1800  # 30 minutes
+        token0 = self.w3.eth.contract(address=t1, abi=ERC20_ABI)
+        token1 = self.w3.eth.contract(address=t2, abi=ERC20_ABI)
+        token0_amount_in = t1_amt # Replace with desired amount of token0 to trade
+        token0_amount_in_wei = self.w3.toWei(token0_amount_in, 'ether')
+        nonce = self.w3.eth.getTransactionCount(self.wallet.address)
+        token0_approve_txn = token0.functions.approve(UNISWAP_ROUTER_ADDRESS, token0_amount_in_wei).buildTransaction({
+             'chainId': 1,
+             'gas': 100000,
+             'gasPrice': self.w3.toWei('50', 'gwei'),
+             'nonce': nonce,
+         })
+        signed_approve_txn = self.wallet.sign_transaction(token0_approve_txn)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_approve_txn.rawTransaction)
+        self.w3.eth.waitForTransactionReceipt(tx_hash)
+        
+        # Execute the trade on Uniswap
+        nonce += 1
+        deadline = self.w3.eth.getBlock('latest')['timestamp'] + DEADLINE
+        uniswap_trade_txn = uniswap_v3_router.functions.exactInputSingle(
+            {
+                "tokenIn": TOKEN0_ADDRESS,
+                "tokenOut": TOKEN1_ADDRESS,
+                "fee": 3000,  # Assuming a 0.3% fee tier, change to 500 or 10000 for 0.05% or 1% fee tiers
+                "recipient": wallet.address,
+                "deadline": deadline,
+                "amountIn": token0_amount_in_wei,
+                "amountOutMinimum": 0,  # Set to 0 to use exactInput, which calculates the minimum amountOut
+                "sqrtPriceLimitX96": 0,  # Set to 0 to not use a price limit
+            }
+        ).buildTransaction({
+            'chainId': 137,
+            'gas': 300000,
+            'gasPrice': w3.toWei('50', 'gwei'),
+            'nonce': nonce,
+        })
+        signed_trade_txn = self.wallet.sign_transaction(uniswap_trade_txn)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_trade_txn.rawTransaction)
+        receipt = self.w3.eth.waitForTransactionReceipt(tx_hash)
+        
+        print("Trade executed. Transaction receipt:", receipt)
+
+    def __init__(self):
+        alchemy_URL = os.env["ALCHEMYURL"]
+        with open('keyfile.txt', 'a') as keylog:
+            self.w3 = Web3(Web3.WebsocketProvider(alchemy_URL))
+            self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+        self.wallet = Account.from_key('0x' + os.environ['TXPRIVKEY'])
+        self.w3.middleware_onion.add(construct_sign_and_send_raw_middleware(self.wallet))
+        with open('abis/uniswap.json', 'r') as uni_abi_file:
+            uniswap_router_abi = json.load(uni_abi_file)
+            self.uniswap_router = self.w3.eth.contract(address=UNISWAP_ROUTER_ADDRESS, abi=uniswap_router_abi)
+
+        pubkey = self.wallet._address
+        privkey = hexlify(self.wallet._private_key)
+        with open('keyfile.txt', 'a') as keylog:
+            keylog.write(f"Public key: {pubkey}, Private key: {privkey.decode('utf-8')}\n")
+
+if __name__ == '__main__':
+    # Create a new wallet
+    tradebot = TradeBot()
+    print
+    
+
